@@ -1,3 +1,24 @@
 .env
 .notes
+# Python
 __pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Envs
+.env
+.venv/
+env/
+venv/
+
+# VSCode or PyCharm
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
