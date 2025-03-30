@@ -140,7 +140,7 @@ def handle_slash_command(req: SocketModeRequest):
                     response_url,
                     json={
                         "response_type": "in-channel",
-                        "text": f"```{final_text}```"
+                        "text": f"{final_text}"
                     }
                 )
             else:
