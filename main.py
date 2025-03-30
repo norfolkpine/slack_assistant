@@ -36,7 +36,7 @@ agent = Agent(
     model=OpenAIChat(id="gpt-4o"),
     tools=[slack_tools, jira_tools],
     show_tool_calls=True,
-    instructions="If translating, return only the translated text. Use slack tools to get message history using the current channel id"
+    instructions="If translating, return only the translated text. Use slack tools."
 )
 
 # === Subscription Check (stubbed function) ===
@@ -169,7 +169,7 @@ def handle_events_api(req: SocketModeRequest):
             channel=event["channel"],  # Channel where the event occurred
             timestamp=event["ts"],  # Timestamp of the message that triggered the event
         )
-        #print(req.payload)
+        print(req.payload)
 
         # Now, access various properties inside the event dictionary
         event_type = event.get("type")  # e.g., app_mention
@@ -220,7 +220,7 @@ def handle_events_api(req: SocketModeRequest):
                 )
 
         # Handle other channel types: public/private channels or direct messages
-        elif event_type == "message" and channel_type == "im":  # Direct message (DM) to the bot
+        elif event_type == "message" and channel_type == "im" :  # Direct message (DM) to the bot
             print(f"Direct message from <@{event.get('user')}> in DM.")
             text = event.get("text", "")
             # Process the message as you would for normal text
@@ -229,13 +229,13 @@ def handle_events_api(req: SocketModeRequest):
             print(f"Message in DM: {cleaned_text}")
 
             # # Run agent or handle it however you need
-            # prompt = cleaned_text
-            # response: RunResponse = agent.run(prompt)
-            # final_text = f"DM reply from bot: {response.content.strip()}"
-            # client.web_client.chat_postMessage(
-            #     channel=event["channel"],
-            #     text=final_text
-            # )
+            prompt = cleaned_text
+            response: RunResponse = agent.run(prompt)
+            final_text = f"DM reply from bot: {response.content.strip()}"
+            client.web_client.chat_postMessage(
+                channel=event["channel"],
+                text=final_text
+            )
 
         else:
             print("ℹ️ Event type not supported, skipping.")
