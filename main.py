@@ -36,7 +36,7 @@ agent = Agent(
     model=OpenAIChat(id="gpt-4o"),
     tools=[slack_tools, jira_tools],
     show_tool_calls=True,
-    instructions="If translating, return only the translated text."
+    instructions="If translating, return only the translated text. Use slack tools to get message history using the current channel id"
 )
 
 # === Subscription Check (stubbed function) ===
@@ -66,7 +66,7 @@ def process(client: SocketModeClient, req: SocketModeRequest):
     if not has_valid_subscription(TEAM_ID):
         print("🚫 Unauthorized workspace.")
         channel = req.payload.get("event", {}).get("channel")
-    
+
         if channel:
             client.web_client.chat_postMessage(
                 channel=channel,
@@ -157,7 +157,6 @@ def handle_slash_command(req: SocketModeRequest):
                 text="⚠️ Sorry, something went wrong while processing your translation request."
             )
 
-# === Handle Events API ===
 def handle_events_api(req: SocketModeRequest):
     # Send acknowledgment response to Slack to avoid timeout
     client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
@@ -170,23 +169,26 @@ def handle_events_api(req: SocketModeRequest):
             channel=event["channel"],  # Channel where the event occurred
             timestamp=event["ts"],  # Timestamp of the message that triggered the event
         )
+        #print(req.payload)
 
         # Now, access various properties inside the event dictionary
         event_type = event.get("type")  # e.g., app_mention
-        print("Event Type:", event_type)
-    
+        channel_type = event.get("channel_type")
+        print("Event Type, Channel Type:", event_type, channel_type)
+
+        # Extract workspace ID (team_id)
+        team_id = req.payload.get("team_id")
+        print(f"🏢 Workspace ID (team_id): {team_id}")
+        
         # Clean text from the mention if it's an app mention
         if event_type == "app_mention":
             bot_user_id = req.payload["authorizations"][0]["user_id"]  # Get bot's user ID
             user = event.get("user")
-            # Extract workspace ID
-            team_id = req.payload.get("team_id")
             mention = f"<@{bot_user_id}>"
             text = event.get("text", "")  # Make sure the text is safely retrieved
             channel = event.get("channel")
             cleaned_text = text.replace(mention, "").strip()  # Clean the mention from the text
 
-            print(f"🏢 Workspace ID (team_id): {team_id}")
             print(f"Bot User ID: {bot_user_id}")
             print(f"Mention: {mention}")
             print(f"User:", user)
@@ -199,10 +201,8 @@ def handle_events_api(req: SocketModeRequest):
                 prompt = cleaned_text
                 # Run the agent
                 response: RunResponse = agent.run(prompt)
-                #final_text = f">From: <@{user}>\n>{text.strip()}\n```{response.content.strip()}\n```"
                 final_text = f">{text.strip()}\n<@{user}> {response.content.strip()}\n"
                 
-                #print(final_text)
                 # Strip bot user mention from the final message text
                 final_text = final_text.replace(f"<@{BOT_USER_ID}>", "").strip()
                 print("📤 Response:", final_text)
@@ -218,6 +218,28 @@ def handle_events_api(req: SocketModeRequest):
                     channel=channel,
                     text="⚠️ Sorry, something went wrong while processing your request."
                 )
+
+        # Handle other channel types: public/private channels or direct messages
+        elif event_type == "message" and channel_type == "im":  # Direct message (DM) to the bot
+            print(f"Direct message from <@{event.get('user')}> in DM.")
+            text = event.get("text", "")
+            # Process the message as you would for normal text
+            cleaned_text = text.strip()
+            # Process the message (maybe run the agent or do something else)
+            print(f"Message in DM: {cleaned_text}")
+
+            # # Run agent or handle it however you need
+            # prompt = cleaned_text
+            # response: RunResponse = agent.run(prompt)
+            # final_text = f"DM reply from bot: {response.content.strip()}"
+            # client.web_client.chat_postMessage(
+            #     channel=event["channel"],
+            #     text=final_text
+            # )
+
+        else:
+            print("ℹ️ Event type not supported, skipping.")
+
 
 # === Register and Connect ===
 client.socket_mode_request_listeners.append(process)
