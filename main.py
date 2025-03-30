@@ -113,6 +113,7 @@ def handle_slash_command(req: SocketModeRequest):
     text = req.payload.get("text")  # The text part after the slash command
     user_id = req.payload.get("user_id")
     channel_id = req.payload.get("channel_id")
+    response_url = req.payload.get("response_url")
 
     print(f"Received slash command: {command}")
     print(f"Command text: {text}")
@@ -127,13 +128,26 @@ def handle_slash_command(req: SocketModeRequest):
             # Run the agent to get the translation
             response: RunResponse = agent.run(prompt)
             translation = response.content.strip()
-
+        
             # Send back the translated text to Slack
             final_text = f">From: <@{user_id}>\n>{text}\n```{translation}```"
-            web_client.chat_postMessage(
-                channel=channel_id,
-                text=final_text
-            )
+
+            if req.payload.get("channel_name") == "directmessage":
+                # This slash command was run in a direct message
+                print("💬 Slash command triggered in a DM")
+                # Use response_url to reply, NOT chat.postMessage
+                requests.post(
+                    response_url,
+                    json={
+                        "response_type": "in-channel",
+                        "text": f"```{final_text}```"
+                    }
+                )
+            else:
+                web_client.chat_postMessage(
+                    channel=channel_id,
+                    text=final_text
+                )
 
         # Move this exception higher
         except Exception as e:
