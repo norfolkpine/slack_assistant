@@ -60,6 +60,19 @@ def process(client: SocketModeClient, req: SocketModeRequest):
 
     # Assign req to another variable for clarity (optional)
     request_data = req # This now holds the original request data
+    # Send acknowledgment response to Slack to avoid timeout
+    # Acknowledge the event
+    client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
+
+    response_url = req.payload.get("response_url")  
+
+    # 1. Send the "Processing..." message via response_url for immediate acknowledgment
+    initial_response = {
+        "text": "⚙️ Processing... Please wait."
+    }
+    # Send the immediate acknowledgment back to Slack using the response URL
+    requests.post(response_url, json=initial_response)
+
     print("⏳ Checking for valid Subscription\n")
     # Check for valid subscription
  
@@ -85,10 +98,6 @@ def process(client: SocketModeClient, req: SocketModeRequest):
 
 # === Handle Slash Commands ===
 def handle_slash_command(req: SocketModeRequest):
-    # Send acknowledgment response to Slack to avoid timeout
-    # Acknowledge the event
-    client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
-
     # Add a reaction to the message (e.g., "eyes" emoji) as an acknowledgment in the channel
     event = req.payload.get("event", {})
     if event:
@@ -111,7 +120,7 @@ def handle_slash_command(req: SocketModeRequest):
     if command == "/indo":
         # Translate the text (remove '/indo' and translate the rest)
         text_to_translate = text.strip()
-        prompt = f"Translate this message to Indonesian: {text_to_translate}"
+        prompt = f"Translate this message to informal Indonesian: {text_to_translate}"
 
         try:
             # Run the agent to get the translation
@@ -176,6 +185,9 @@ def handle_events_api(req: SocketModeRequest):
         channel_type = event.get("channel_type")
         print("Event Type, Channel Type:", event_type, channel_type)
 
+        thread_ts = event.get("thread_ts") or event.get("ts")
+
+
         # Extract workspace ID (team_id)
         team_id = req.payload.get("team_id")
         print(f"🏢 Workspace ID (team_id): {team_id}")
@@ -207,11 +219,22 @@ def handle_events_api(req: SocketModeRequest):
                 final_text = final_text.replace(f"<@{BOT_USER_ID}>", "").strip()
                 print("📤 Response:", final_text)
 
-                # Send reply to Slack with Markdown formatting
-                client.web_client.chat_postMessage(
-                    channel=channel,
-                    text=final_text
-                )
+                # Determine if this is a thread reply
+                thread_ts = event.get("thread_ts")
+
+                # Build the message payload
+                message_payload = {
+                    "channel": channel,
+                    "text": final_text
+                }
+
+                # Only include thread_ts if it exists
+                if thread_ts is not None:
+                    message_payload["thread_ts"] = thread_ts
+
+                # Send the message
+                client.web_client.chat_postMessage(**message_payload)
+                
             except Exception as e:
                 print(f"❌ Error while processing prompt: {e}")
                 client.web_client.chat_postMessage(
@@ -232,9 +255,11 @@ def handle_events_api(req: SocketModeRequest):
             prompt = cleaned_text
             response: RunResponse = agent.run(prompt)
             final_text = f"DM reply from bot: {response.content.strip()}"
+
             client.web_client.chat_postMessage(
                 channel=event["channel"],
-                text=final_text
+                text=final_text,
+                thread_ts=thread_ts
             )
 
         else:
