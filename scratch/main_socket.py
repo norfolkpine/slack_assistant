@@ -141,7 +141,7 @@ async def slash_commands(
     try:
         async def run_agent_async():
             try:
-                print("1 Prompt not started here")
+                print("1 Prompt not started ")
                 print("💭 Prompt:", prompt)
                 response: RunResponse = agent.run(prompt)
                 final_text = f">From: <@{user_id}>\n>{text.strip()}\n```\n{response.content.strip()}\n```"

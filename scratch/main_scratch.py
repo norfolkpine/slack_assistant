@@ -25,7 +25,6 @@ client = SocketModeClient(app_token=SLACK_APP_TOKEN, web_client=web_client)
 # Fetch bot user ID dynamically from Slack
 response = web_client.auth_test()
 BOT_USER_ID = response["user_id"]
-TEAM_ID = response["team_id"]
 
 # === Agent Setup ===
 slack_tools = SlackTools()
@@ -59,20 +58,7 @@ def process(client: SocketModeClient, req: SocketModeRequest):
     print("📥 Incoming request:", req.type)
 
     # Assign req to another variable for clarity (optional)
-    request_data = req # This now holds the original request data
-    print("⏳ Checking for valid Subscription\n")
-    # Check for valid subscription
- 
-    if not has_valid_subscription(TEAM_ID):
-        print("🚫 Unauthorized workspace.")
-        channel = req.payload.get("event", {}).get("channel")
-    
-        if channel:
-            client.web_client.chat_postMessage(
-                channel=channel,
-                text="⚠️ This workspace does not have an active subscription."
-            )
-        return
+    request_data = req  # This now holds the original request data
 
     # Maybe add Try here
     # Acknowledge the event immediately
@@ -82,6 +68,97 @@ def process(client: SocketModeClient, req: SocketModeRequest):
         # Acknowledge the event immediately
     if request_data.type == "slash_commands":
         handle_slash_command(req)
+
+    # OLD METHOD
+    # if event_type == "app_mention":
+    #     bot_user_id = req.payload["authorizations"][0]["user_id"]
+    #     mention = f"<@{bot_user_id}>"
+    #     cleaned_text = text.replace(mention, "").strip()
+
+    # elif event_type == "events_api":
+    #     bot_user_id = req.payload["authorizations"][0]["user_id"]
+    #     mention = f"<@{bot_user_id}>"
+    #     cleaned_text = text.replace(mention, "").strip()
+    # elif event_type == "message" and channel_type == "im":
+    #     cleaned_text = text.strip()
+
+
+# # This works for slash_commands
+#     payload = req.payload
+#     print(payload)
+
+#     # Extract workspace ID
+#     team_id = payload.get("team_id")
+#     print(f"🏢 Workspace ID (team_id): {team_id}")
+#     # Access the relevant details from the payload
+#     command = payload.get("command")  # This is the slash command, e.g., '/indo'
+#     print(f"👤 Command: {command}")
+#     text = payload.get("text")  # The text following the slash command (e.g., 'hey you')
+#     print(f"💬 Message: {text}")
+#     event_type = req.type
+#     print(f"🔍 Event Type: {event_type}") # | ")
+#     channel_type = req.channel_type
+#     print(f"🔍 Channel Type: {channel_type}")
+#     user_id = payload.get("user_id")  # User ID who issued the command
+#     print(f"👤 User: {user_id}")
+#     channel_id = payload.get("channel_id")  # Channel ID where the command was issued
+#     response_url = payload.get("response_url")  
+#     print(f"📡 Channel: {channel_id}")
+
+#     # 1. Send the "Processing..." message via response_url for immediate acknowledgment
+#     initial_response = {
+#         "text": "⚙️ Processing... Please wait."
+#     }
+#     # Send the immediate acknowledgment back to Slack using the response URL
+#     requests.post(response_url, json=initial_response)
+
+#     # Clean text
+#     if event_type == "app_mention":
+#         bot_user_id = req.payload["authorizations"][0]["user_id"]
+#         mention = f"<@{bot_user_id}>"
+#         cleaned_text = text.replace(mention, "").strip()
+#     elif event_type == "events_api":
+#         bot_user_id = req.payload["authorizations"][0]["user_id"]
+#         mention = f"<@{bot_user_id}>"
+#         cleaned_text = text.replace(mention, "").strip()
+#     elif event_type == "message" and channel_type == "im":
+#         cleaned_text = text.strip()
+    
+#     elif req.type == "slash_commands":
+#         print("Event")
+#         handle_slash_command(req)
+#     #elif req.type == "interactive":
+#     #    handle_interactive(req)
+#     else:
+#         print("ℹ️ Unsupported event type, skipping.")
+#         return
+
+#     try:
+#         print("\n🧠 Running agent with prompt:")
+#         #agent.print_response(prompt, markdown=True)
+#         print("⏳ Waiting for response...\n")
+
+#         # Run the agent
+#         response: RunResponse = agent.run(prompt)
+#         final_text = f">From: <@{user_id}>\n>{text.strip()}\n```{response.content.strip()}\n```"
+#         #print(final_text)
+#         # Strip bot user mention from the final message text
+#         final_text = final_text.replace(f"<@{BOT_USER_ID}>", "").strip()
+#         #print("📤 Response:", final_text)
+
+#         # Send reply to Slack with Markdown formatting
+#         client.web_client.chat_postMessage(
+#             channel=channel,
+#             text=final_text
+#         )
+
+
+    # except Exception as e:
+    #     print(f"❌ Error while processing prompt: {e}")
+    #     client.web_client.chat_postMessage(
+    #         channel=channel,
+    #         text="⚠️ Sorry, something went wrong while processing your request."
+    #     )
 
 # === Handle Slash Commands ===
 def handle_slash_command(req: SocketModeRequest):
@@ -156,6 +233,8 @@ def handle_slash_command(req: SocketModeRequest):
                 channel=channel_id,
                 text="⚠️ Sorry, something went wrong while processing your translation request."
             )
+        
+
 
 # === Handle Events API ===
 def handle_events_api(req: SocketModeRequest):
@@ -194,6 +273,17 @@ def handle_events_api(req: SocketModeRequest):
             print(f"Channel:", channel)
 
             print("\n🧠 Running agent with prompt:")
+            print("⏳ Checking for valid Subscription\n")
+            # Check for valid subscription
+            if not has_valid_subscription(team_id):
+                print("🚫 Unauthorized workspace.")
+                channel = req.payload.get("event", {}).get("channel")
+                if channel:
+                    client.web_client.chat_postMessage(
+                        channel=channel,
+                        text="⚠️ This workspace does not have an active subscription."
+                    )
+                return
 
             try:
                 prompt = cleaned_text
@@ -205,7 +295,7 @@ def handle_events_api(req: SocketModeRequest):
                 #print(final_text)
                 # Strip bot user mention from the final message text
                 final_text = final_text.replace(f"<@{BOT_USER_ID}>", "").strip()
-                print("📤 Response:", final_text)
+                #print("📤 Response:", final_text)
 
                 # Send reply to Slack with Markdown formatting
                 client.web_client.chat_postMessage(
