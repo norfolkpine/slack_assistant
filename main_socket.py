@@ -141,6 +141,7 @@ async def slash_commands(
     try:
         async def run_agent_async():
             try:
+                print("1 Prompt not started here")
                 print("💭 Prompt:", prompt)
                 response: RunResponse = agent.run(prompt)
                 final_text = f">From: <@{user_id}>\n>{text.strip()}\n```\n{response.content.strip()}\n```"
@@ -211,6 +212,7 @@ async def slack_events(
         processing_tracker[user_id] = True
 
         try:
+            # First tag response sends here
             print("💭 Prompt:", prompt)
             response: RunResponse = agent.run(prompt)
             final_text = f">From: <@{user_id}>\n>{original_text}\n```\n{response.content.strip()}\n```"
@@ -219,8 +221,10 @@ async def slack_events(
 
             # Strip bot user mention from the final message text
             final_text = final_text.replace(f"<@{BOT_USER_ID}>", "").strip()
-
+            
+            # Round 1 text
             web_client.chat_postMessage(channel=channel, text=final_text)
+            print("I did not send once")
 
             # After the task is completed, mark the user as done
             processing_tracker[user_id] = False
