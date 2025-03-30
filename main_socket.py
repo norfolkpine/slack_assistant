@@ -34,7 +34,7 @@ SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET")
 web_client = WebClient(token=SLACK_BOT_TOKEN)
 # Fetch bot user ID dynamically from Slack
 response = web_client.auth_test()
-BOT_USER_ID = response["user_id"] 
+BOT_USER_ID = response["user_id"]
 
 # === FastAPI app ===
 app = FastAPI()
@@ -96,7 +96,6 @@ async def slash_commands(
     request: Request,
     x_slack_signature: str = Header(...),
     x_slack_request_timestamp: str = Header(...)
-
 ):
     body = await request.body()
 
@@ -121,6 +120,7 @@ async def slash_commands(
     print("User:", user_id)
     print("Channel:", channel_id)
 
+    # Define the prompt based on the command
     if command == "/indo":
         prompt = f"Translate this message to Indonesian: {text.strip()}"
     elif command == "/en":
@@ -143,7 +143,7 @@ async def slash_commands(
             try:
                 print("💭 Prompt:", prompt)
                 response: RunResponse = agent.run(prompt)
-                final_text = f">{text.strip()}\n```\n{response.content.strip()}\n```"
+                final_text = f">From: <@{user_id}>\n>{text.strip()}\n```\n{response.content.strip()}\n```"
                 print("📤 Response:", final_text)
                 print(f"🚀 Sending to response_url: {response_url}")
                 payload = {
@@ -177,6 +177,7 @@ async def slash_commands(
             "response_type": "ephemeral",
             "text": "⚠️ Something went wrong."
         })
+
 
 # === Event Callback Webhook ===
 @app.post("/slack/events")
