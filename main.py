@@ -60,18 +60,19 @@ def process(client: SocketModeClient, req: SocketModeRequest):
 
     # Assign req to another variable for clarity (optional)
     request_data = req # This now holds the original request data
+    print("Request Data:", request_data.payload)
     # Send acknowledgment response to Slack to avoid timeout
     # Acknowledge the event
     client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
 
-    response_url = req.payload.get("response_url")  
-
-    # 1. Send the "Processing..." message via response_url for immediate acknowledgment
-    initial_response = {
-        "text": "⚙️ Processing... Please wait."
-    }
-    # Send the immediate acknowledgment back to Slack using the response URL
-    requests.post(response_url, json=initial_response)
+    response_url = req.payload.get("response_url", None)  
+    if response_url:
+        # 1. Send the "Processing..." message via response_url for immediate acknowledgment
+        initial_response = {
+            "text": "⚙️ Processing... Please wait."
+        }
+        # Send the immediate acknowledgment back to Slack using the response URL
+        requests.post(response_url, json=initial_response)
 
     print("⏳ Checking for valid Subscription\n")
     # Check for valid subscription
@@ -92,8 +93,8 @@ def process(client: SocketModeClient, req: SocketModeRequest):
     if request_data.type == "events_api":
         handle_events_api(req)
 
-        # Acknowledge the event immediately
-    if request_data.type == "slash_commands":
+    # Acknowledge the event immediately
+    elif request_data.type == "slash_commands":
         handle_slash_command(req)
 
 # === Handle Slash Commands ===
@@ -172,13 +173,22 @@ def handle_events_api(req: SocketModeRequest):
 
     # Add a reaction to the message (e.g., "eyes" emoji) as an acknowledgment in the channel
     event = req.payload.get("event", {})
+    user = event.get("user")
+    bot_id = event.get("bot_id")  # Only exists if message was sent by a bot
+
+    # Ignore messages from bots (including your own bot)
+    if bot_id or user == BOT_USER_ID:
+        print("🤖 Skipping bot message to avoid loop.")
+        return
+
+    print("Payload", req.payload)
     if event:
         client.web_client.reactions_add(
             name="eyes",
             channel=event["channel"],  # Channel where the event occurred
             timestamp=event["ts"],  # Timestamp of the message that triggered the event
         )
-        print(req.payload)
+    
 
         # Now, access various properties inside the event dictionary
         event_type = event.get("type")  # e.g., app_mention
@@ -191,6 +201,7 @@ def handle_events_api(req: SocketModeRequest):
         # Extract workspace ID (team_id)
         team_id = req.payload.get("team_id")
         print(f"🏢 Workspace ID (team_id): {team_id}")
+
         
         # Clean text from the mention if it's an app mention
         if event_type == "app_mention":
@@ -241,10 +252,11 @@ def handle_events_api(req: SocketModeRequest):
                     channel=channel,
                     text="⚠️ Sorry, something went wrong while processing your request."
                 )
-
+        
         # Handle other channel types: public/private channels or direct messages
         elif event_type == "message" and channel_type == "im" :  # Direct message (DM) to the bot
             print(f"Direct message from <@{event.get('user')}> in DM.")
+            print("Channel type:", channel_type)
             text = event.get("text", "")
             # Process the message as you would for normal text
             cleaned_text = text.strip()
