@@ -280,7 +280,7 @@ def handle_events_api(req: SocketModeRequest):
             # # Run agent or handle it however you need
             prompt = cleaned_text
             response: RunResponse = agent.run(prompt)
-            final_text = f"DM reply from bot: {response.content.strip()}"
+            final_text = f"{response.content.strip()}"
 
             client.web_client.chat_postMessage(
                 channel=event["channel"],
