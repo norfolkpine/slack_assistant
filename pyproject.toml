@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "slack-assistant"
+version = "0.1.0"
+description = ""
+authors = ["Ben Heath"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+agno = "^1.2.6"
+flask = "^3.1.0"
+python-dotenv = "^1.1.0"
+google-cloud-secret-manager = "^2.23.2"
+fastapi = "^0.115.12"
+slack-sdk = "^3.35.0"
+jira = "^3.8.0"
+openai = "^1.69.0"
+dotenv = "^0.9.9"
+uvicorn = "^0.34.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
