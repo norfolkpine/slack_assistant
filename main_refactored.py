@@ -33,7 +33,10 @@ agent = Agent(
     model=OpenAIChat(id="gpt-4o"),
     tools=[SlackTools(), JiraTools(), CoinGeckoTools()],
     show_tool_calls=True,
-    instructions="If translating, return only the translated text. Use Slack tools."
+    instructions= [
+        "If translating, return only the translated text. Use Slack tools.",
+        "Format using currency symbols"
+        ]
 )
 
 # === Check for subscription (stubbed) ===
