@@ -40,6 +40,15 @@ def has_valid_subscription(team_id: str) -> bool:
     VALID_TEAM_IDS = {"T06LP8F3K8V", "T87654321"}
     return team_id in VALID_TEAM_IDS
 
+# Future code for tracking against SaaS service
+# def has_valid_subscription(slack_team_id: str) -> bool:
+#     try:
+#         workspace = SlackWorkspace.objects.get(slack_team_id=slack_team_id)
+#         team = workspace.team
+#         return team.subscriptions.filter(status="active").exists()
+#     except SlackWorkspace.DoesNotExist:
+#         return False
+
 # === SocketMode main handler ===
 def process(client: SocketModeClient, req: SocketModeRequest):
     print(f"📥 Incoming request: {req.type}")
