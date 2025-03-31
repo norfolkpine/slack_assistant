@@ -11,6 +11,7 @@ from agno.agent import Agent, RunResponse
 from agno.models.openai import OpenAIChat
 from agno.tools.slack import SlackTools
 from agno.tools.jira import JiraTools
+from tools.coingecko import CoinGeckoTools
 
 # === Load environment variables ===
 load_dotenv()
@@ -30,7 +31,7 @@ TEAM_ID = auth_info["team_id"]
 agent = Agent(
     name="Reggie",
     model=OpenAIChat(id="gpt-4o"),
-    tools=[SlackTools(), JiraTools()],
+    tools=[SlackTools(), JiraTools(), CoinGeckoTools()],
     show_tool_calls=True,
     instructions="If translating, return only the translated text. Use Slack tools."
 )
