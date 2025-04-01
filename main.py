@@ -36,7 +36,12 @@ agent = Agent(
     model=OpenAIChat(id="gpt-4o"),
     tools=[slack_tools, jira_tools],
     show_tool_calls=True,
-    instructions="If translating, return only the translated text. Use slack tools."
+    instructions=[
+        "If translating, return only the translated text. Use slack tools.",
+        "If I ask you to get channel history for everything, provide what you can and then provide a list of the channels you could not access",
+        "When asked what channels a user has accessed, get channel history and search for references of the user",
+        
+    ]
 )
 
 # === Subscription Check (stubbed function) ===

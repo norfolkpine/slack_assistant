@@ -9,9 +9,13 @@ from slack_sdk.socket_mode.response import SocketModeResponse
 
 from agno.agent import Agent, RunResponse
 from agno.models.openai import OpenAIChat
-from agno.tools.slack import SlackTools
+from agno.models.google import Gemini
+#from agno.tools.slack import SlackTools
 from agno.tools.jira import JiraTools
 from tools.coingecko import CoinGeckoTools
+from tools.custom_slack import SlackTools
+from tools.blockscout import BlockscoutTools
+
 
 # === Load environment variables ===
 load_dotenv()
@@ -31,6 +35,7 @@ TEAM_ID = auth_info["team_id"]
 agent = Agent(
     name="Reggie",
     model=OpenAIChat(id="gpt-4o"),
+    #model=Gemini(id="gemini-1.5-flash"),
     tools=[SlackTools(), JiraTools(), CoinGeckoTools()],
     show_tool_calls=True,
     instructions= [
