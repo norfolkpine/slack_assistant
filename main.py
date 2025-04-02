@@ -44,7 +44,13 @@ def init_agent(
         show_tool_calls=True,
         instructions= [
             "If translating, return only the translated text. Use Slack tools.",
-            "If replying as reggie on slack, use Slack tools. ALWAYS read context from read_slack_event_context before doing anything, all function for the slack tool is available on the event context. ALWAYS try to get_chat_thread_history, then use tools accordingly. FINALLY, always send_message back, passing mention_user_id obtained from read_slack_event_context data.",
+            """
+                If replying as reggie on slack, use Slack tools. 
+                ALWAYS read context from received input before doing anything. 
+                ALWAYS try to validate the decision to reply on a thread or reply on channel by validating with is_thread_valid, then use tools accordingly;
+                    if it's a thread, get_thread_history and if it's a single message, get_channel_history. 
+                FINALLY, always send_message back.
+            """,
             "Format using currency symbols",
             "Use tools for getting data such as the price of bitcoin"
         ],
@@ -175,8 +181,8 @@ def handle_events_api(agent: Agent, req: SocketModeRequest):
 
             response: RunResponse = agent.run(
                 message=str({
-                "from_user": user,
                 "type": "slack",
+                "from_user": user,
                 "message": cleaned_text,
                 "channel": channel,
                 "thread_ts": thread_ts,
