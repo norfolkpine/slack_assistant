@@ -41,6 +41,10 @@ class SlackTools(Toolkit):
             self.register(self.get_current_channel)
         if get_previous_user_message:
             self.register(self.get_previous_user_message)
+    
+    def read_slack_event_context(self) -> str:
+        print(self.event)
+        return json.dumps(self.event)
 
     def send_message(self, channel: str, text: str) -> str:
         try:

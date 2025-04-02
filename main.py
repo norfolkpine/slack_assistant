@@ -39,6 +39,7 @@ agent = Agent(
     tools=[SlackTools(), JiraTools(), CoinGeckoTools()],
     show_tool_calls=True,
     instructions= [
+        "When calling slack tools ALWAYS use read_slack_event_context"
         "If translating, return only the translated text. Use Slack tools.",
         "Format using currency symbols",
         "Use tools for getting data such as the price of bitcoin"
