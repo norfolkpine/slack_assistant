@@ -41,7 +41,7 @@ class SlackTools(Toolkit):
         if list_channels:
             self.register(self.list_channels)
         if get_thread_history:
-            self.register(self.get_chat_thread_history)
+            self.register(self.get_conversation_history)
         if get_current_channel:
             self.register(self.get_current_channel)
         if get_previous_user_message:
@@ -88,7 +88,7 @@ class SlackTools(Toolkit):
             logger.error(f"Error listing channels: {e}")
             return json.dumps({"error": str(e)})
 
-    def get_chat_thread_history(self, channel: str, thread_ts: Optional[str] = None, limit: int = 100) -> str:
+    def get_conversation_history(self, channel: str, thread_ts: Optional[str] = None, limit: int = 100) -> str:
         try:
             if thread_ts:
                 # Get thread replies if thread_ts is provided
@@ -107,19 +107,22 @@ class SlackTools(Toolkit):
                     }
                     for msg in response.get("messages", [])
                 ]
-            else:
-                # Get normal conversation history
-                response = self.client.web_client.conversations_history(channel=channel, limit=limit)
-                messages: List[Dict[str, Any]] = [
-                    {
-                        "text": msg.get("text", ""),
-                        "user": "webhook" if msg.get("subtype") == "bot_message" else msg.get("user", "unknown"),
-                        "ts": msg.get("ts", ""),
-                        "sub_type": msg.get("subtype", "unknown"),
-                        "attachments": msg.get("attachments", []) if msg.get("subtype") == "bot_message" else "n/a",
-                    }
-                    for msg in response.get("messages", [])
-                ]
+
+                if len(messages) > 1:
+                    return json.dumps(messages)
+                
+            # Get normal conversation history
+            response = self.client.web_client.conversations_history(channel=channel, limit=limit)
+            messages: List[Dict[str, Any]] = [
+                {
+                    "text": msg.get("text", ""),
+                    "user": "webhook" if msg.get("subtype") == "bot_message" else msg.get("user", "unknown"),
+                    "ts": msg.get("ts", ""),
+                    "sub_type": msg.get("subtype", "unknown"),
+                    "attachments": msg.get("attachments", []) if msg.get("subtype") == "bot_message" else "n/a",
+                }
+                for msg in response.get("messages", [])
+            ]
             return json.dumps(messages)
         except SlackApiError as e:
             logger.error(f"Error getting channel history: {e}")
