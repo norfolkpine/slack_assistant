@@ -1,3 +1,4 @@
+import re
 import os
 import requests
 from threading import Event
@@ -16,6 +17,21 @@ from tools.coingecko import CoinGeckoTools
 from tools.custom_slack import SlackTools
 from tools.blockscout import BlockscoutTools
 
+
+def extract_channel_and_ts(url: str) -> tuple:
+    pattern = r'https://([a-zA-Z0-9\-]+)\.slack\.com/archives/([A-Za-z0-9]+)/p([0-9]+)'
+    
+    match = re.match(pattern, url)
+    
+    if match:
+        channel = match.group(2) 
+        ts = match.group(3)  
+        
+        ts_standard = f"{ts[:10]}.{ts[10:]}"
+        
+        return channel, ts_standard
+    else:
+        raise ValueError("Invalid Slack message URL format")
 
 # === Load environment variables ===
 load_dotenv()
@@ -42,7 +58,10 @@ agent = Agent(
         "If translating, return only the translated text. Use Slack tools.",
         "Format using currency symbols",
         "Use tools for getting data such as the price of bitcoin"
-        ]
+    ],
+    read_chat_history=True,
+    add_history_to_messages=True,
+    num_history_responses=10,
 )
 
 # === Check for subscription (stubbed) ===
@@ -95,6 +114,7 @@ def process(client: SocketModeClient, req: SocketModeRequest):
 
 # === Handle slash commands ===
 def handle_slash_command(req: SocketModeRequest):
+
     command = req.payload.get("command")
     text = req.payload.get("text", "").strip()
     user_id = req.payload.get("user_id")
@@ -102,35 +122,71 @@ def handle_slash_command(req: SocketModeRequest):
 
     print(f"📎 Slash command: {command}, Text: {text}")
 
-    translation_prompts = {
-        "/indo": f"Translate this message to informal Indonesian: {text}",
-        "/en": f"Translate this message to English: {text}"
-    }
+    if command == '/indo' or command == '/en':
+        print(f"🌐 Translation command received: {command}")
 
-    prompt = translation_prompts.get(command)
-    if not prompt:
-        print("⚠️ Unrecognized slash command.")
-        return
+        translation_prompts = {
+            "/indo": f"Translate this message to informal Indonesian: {text}",
+            "/en": f"Translate this message to English: {text}"
+        }
 
-    try:
-        response: RunResponse = agent.run(prompt)
-        translation = response.content.strip()
-        final_text = f">From: <@{user_id}>\n>{text}\n```{translation}```"
+        prompt = translation_prompts.get(command)
+        if not prompt:
+            print("⚠️ Unrecognized slash command.")
+            return
 
-        requests.post(
-            response_url,
-            json={
-                "response_type": "in_channel",  # or "ephemeral" for private response
-                "text": final_text
-            }
-        )
+        try:
+            response: RunResponse = agent.run(prompt)
+            translation = response.content.strip()
+            final_text = f">From: <@{user_id}>\n>{text}\n```{translation}```"
 
-    except Exception as e:
-        print(f"❌ Error in slash command handler: {e}")
-        requests.post(
-            response_url,
-            json={"text": "⚠️ Sorry, something went wrong while processing your translation request."}
-        )
+            requests.post(
+                response_url,
+                json={
+                    "response_type": "in_channel",  # or "ephemeral" for private response
+                    "text": final_text
+                }
+            )
+
+        except Exception as e:
+            print(f"❌ Error in slash command handler: {e}")
+            requests.post(
+                response_url,
+                json={"text": "⚠️ Sorry, something went wrong while processing your translation request."}
+            )
+
+    elif command == '/summarize':
+        channel, message_ts = extract_channel_and_ts(text)
+        print(f"📜 Summarizing message from channel: {channel}, ts: {message_ts}")
+        history_messages = []
+        try:
+            response = client.web_client.conversations_replies(
+                channel=channel,
+                ts=message_ts, 
+            )
+
+            if response.get("messages"):
+                history_messages = [
+                    f"<@{msg['user']}>: {msg['text']}"
+                    for msg in reversed(response["messages"]) 
+                    if "user" in msg and "text" in msg
+                ]
+                context = "\n".join(history_messages)
+                full_prompt = f"Summarize comprehensively, skimmable, but keeping important details.\nThread history:\n{context}"
+                response: RunResponse = agent.run(full_prompt)
+                final_text = f">From: <@{user_id}>\n>{text}\n```{response.content.strip()}```"
+                
+                client.web_client.chat_postMessage(
+                    channel=channel,
+                    text=final_text,
+                )
+                    
+        except Exception as e:
+            print(f"⚠️ Failed to fetch thread history: {e}")
+            return
+
+
+   
 
 # === Handle Events API (mentions and DMs) ===
 def handle_events_api(req: SocketModeRequest):
@@ -145,7 +201,8 @@ def handle_events_api(req: SocketModeRequest):
     channel = event.get("channel")
     channel_type = event.get("channel_type")
     text = event.get("text", "").strip()
-    thread_ts = event.get("thread_ts") or event.get("ts")
+    thread_ts = event.get("thread_ts") or event.get("ts")  # thread_ts or message timestamp
+    message_ts = event.get("ts")
 
     # React to acknowledge
     try:
@@ -159,11 +216,28 @@ def handle_events_api(req: SocketModeRequest):
 
     try:
         if event_type == "app_mention":
-            bot_user_id = req.payload["authorizations"][0]["user_id"]
-            cleaned_text = text.replace(f"<@{bot_user_id}>", "").strip()
-            print(f"💬 Mention from <@{user}>: {cleaned_text}")
+            if text.contains("<@U04L9AWRH4Z>"):
+                text = text.replace("<@U04L9AWRH4Z>", "").strip()
+            history_messages = []
+            try:
+                response = client.web_client.conversations_replies(
+                    channel=channel,
+                    ts=message_ts, 
+                )
 
-            response: RunResponse = agent.run(cleaned_text)
+                if response.get("messages"):
+                    history_messages = [
+                        f"<@{msg['user']}>: {msg['text']}"
+                        for msg in reversed(response["messages"]) 
+                        if "user" in msg and "text" in msg
+                    ]
+
+            except Exception as e:
+                print(f"⚠️ Failed to fetch thread history: {e}")
+
+            context = "\n".join(history_messages)
+            full_prompt = f"Thread history:\n{context}\n\nNew message from <@{user}>: {text}"
+            response: RunResponse = agent.run(full_prompt)
             final_text = f">{text}\n<@{user}> {response.content.strip()}"
 
             client.web_client.chat_postMessage(
@@ -191,8 +265,12 @@ def handle_events_api(req: SocketModeRequest):
             text="⚠️ Sorry, something went wrong while processing your request."
         )
 
+
 # === Start Socket Mode connection ===
 client.socket_mode_request_listeners.append(process)
 print("🚀 Connecting to Slack via Socket Mode...")
 client.connect()
 Event().wait()
+
+
+# https://benheathworkspace.slack.com/archives/C08L9AWRH4Z/p1743535083057059
