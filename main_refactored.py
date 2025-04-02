@@ -40,7 +40,8 @@ agent = Agent(
     show_tool_calls=True,
     instructions= [
         "If translating, return only the translated text. Use Slack tools.",
-        "Format using currency symbols"
+        "Format using currency symbols",
+        "Use tools for getting data such as the price of bitcoin"
         ]
 )
 

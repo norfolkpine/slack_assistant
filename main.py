@@ -1,56 +1,56 @@
 import os
+import requests
+from threading import Event
 from dotenv import load_dotenv
 from slack_sdk.web import WebClient
 from slack_sdk.socket_mode import SocketModeClient
-from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.socket_mode.request import SocketModeRequest
+from slack_sdk.socket_mode.response import SocketModeResponse
 
 from agno.agent import Agent, RunResponse
-from agno.tools.slack import SlackTools
 from agno.models.openai import OpenAIChat
-from agno.utils.pprint import pprint_run_response
+from agno.models.google import Gemini
+#from agno.tools.slack import SlackTools
 from agno.tools.jira import JiraTools
-import requests
+from tools.coingecko import CoinGeckoTools
+from tools.custom_slack import SlackTools
+from tools.blockscout import BlockscoutTools
 
-# === Load environment ===
+
+# === Load environment variables ===
 load_dotenv()
-SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")  # xoxb-...
-SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN")  # xapp-...
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # xapp-...
+SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN")
 
-# === Slack SDK Setup ===
+# === Setup Slack clients ===
 web_client = WebClient(token=SLACK_BOT_TOKEN)
 client = SocketModeClient(app_token=SLACK_APP_TOKEN, web_client=web_client)
 
-# Fetch bot user ID dynamically from Slack
-response = web_client.auth_test()
-BOT_USER_ID = response["user_id"]
-TEAM_ID = response["team_id"]
+# Fetch bot metadata
+auth_info = web_client.auth_test()
+BOT_USER_ID = auth_info["user_id"]
+TEAM_ID = auth_info["team_id"]
 
-# === Agent Setup ===
-slack_tools = SlackTools()
-jira_tools = JiraTools()
-
+# === Setup AI Agent ===
 agent = Agent(
     name="Reggie",
     model=OpenAIChat(id="gpt-4o"),
-    tools=[slack_tools, jira_tools],
+    #model=Gemini(id="gemini-1.5-flash"),
+    tools=[SlackTools(), JiraTools(), CoinGeckoTools()],
     show_tool_calls=True,
-    instructions=[
-        "If translating, return only the translated text. Use slack tools.",
-        "If I ask you to get channel history for everything, provide what you can and then provide a list of the channels you could not access",
-        "When asked what channels a user has accessed, get channel history and search for references of the user",
-        
-    ]
+    instructions= [
+        "If translating, return only the translated text. Use Slack tools.",
+        "Format using currency symbols",
+        "Use tools for getting data such as the price of bitcoin"
+        ]
 )
 
-# === Subscription Check (stubbed function) ===
+# === Check for subscription (stubbed) ===
 def has_valid_subscription(team_id: str) -> bool:
-    # TODO: Replace this stub with actual DB lookup
-    # For example: query your database to see if team_id is valid
-    VALID_TEAM_IDS = {"T06LP8F3K8V", "T87654321"}  # Example placeholder
+    VALID_TEAM_IDS = {"T06LP8F3K8V", "T87654321"}
     return team_id in VALID_TEAM_IDS
 
+# Future code for tracking against SaaS service
 # def has_valid_subscription(slack_team_id: str) -> bool:
 #     try:
 #         workspace = SlackWorkspace.objects.get(slack_team_id=slack_team_id)
@@ -59,33 +59,20 @@ def has_valid_subscription(team_id: str) -> bool:
 #     except SlackWorkspace.DoesNotExist:
 #         return False
 
-# === Process Slack Events ===
+# === SocketMode main handler ===
 def process(client: SocketModeClient, req: SocketModeRequest):
-    print("📥 Incoming request:", req.type)
+    print(f"📥 Incoming request: {req.type}")
 
-    # Assign req to another variable for clarity (optional)
-    request_data = req # This now holds the original request data
-    print("Request Data:", request_data.payload)
-    # Send acknowledgment response to Slack to avoid timeout
-    # Acknowledge the event
-    client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
+    # Always acknowledge the event
+    try:
+        client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
+    except Exception as e:
+        print(f"❗ Failed to ACK Slack request: {e}")
+        return
 
-    response_url = req.payload.get("response_url", None)  
-    if response_url:
-        # 1. Send the "Processing..." message via response_url for immediate acknowledgment
-        initial_response = {
-            "text": "⚙️ Processing... Please wait."
-        }
-        # Send the immediate acknowledgment back to Slack using the response URL
-        requests.post(response_url, json=initial_response)
-
-    print("⏳ Checking for valid Subscription\n")
-    # Check for valid subscription
- 
     if not has_valid_subscription(TEAM_ID):
         print("🚫 Unauthorized workspace.")
         channel = req.payload.get("event", {}).get("channel")
-
         if channel:
             client.web_client.chat_postMessage(
                 channel=channel,
@@ -93,215 +80,119 @@ def process(client: SocketModeClient, req: SocketModeRequest):
             )
         return
 
-    # Maybe add Try here
-    # Acknowledge the event immediately
-    if request_data.type == "events_api":
-        handle_events_api(req)
+    if req.payload.get("response_url"):
+        requests.post(req.payload["response_url"], json={"text": "⚙️ Processing... Please wait."})
 
-    # Acknowledge the event immediately
-    elif request_data.type == "slash_commands":
-        handle_slash_command(req)
+    try:
+        if req.type == "slash_commands":
+            handle_slash_command(req)
+        elif req.type == "events_api":
+            handle_events_api(req)
+        else:
+            print(f"ℹ️ Unsupported request type: {req.type}")
+    except Exception as e:
+        print(f"❌ Error while processing request: {e}")
 
-# === Handle Slash Commands ===
+# === Handle slash commands ===
 def handle_slash_command(req: SocketModeRequest):
-    # Add a reaction to the message (e.g., "eyes" emoji) as an acknowledgment in the channel
-    event = req.payload.get("event", {})
-    if event:
-        client.web_client.reactions_add(
-            name="eyes",
-            channel=event["channel"],  # Channel where the event occurred
-            timestamp=event["ts"],  # Timestamp of the message that triggered the event
-        )
-
-    # Extract slash command payload
     command = req.payload.get("command")
-    text = req.payload.get("text")  # The text part after the slash command
+    text = req.payload.get("text", "").strip()
     user_id = req.payload.get("user_id")
-    channel_id = req.payload.get("channel_id")
     response_url = req.payload.get("response_url")
 
-    print(f"Received slash command: {command}")
-    print(f"Command text: {text}")
-    
+    print(f"📎 Slash command: {command}, Text: {text}")
 
-    if command == "/indo":
-        # Translate the text (remove '/indo' and translate the rest)
-        text_to_translate = text.strip()
-        prompt = f"Translate this message to informal Indonesian: {text_to_translate}"
+    translation_prompts = {
+        "/indo": f"Translate this message to informal Indonesian: {text}",
+        "/en": f"Translate this message to English: {text}"
+    }
 
-        try:
-            # Run the agent to get the translation
-            response: RunResponse = agent.run(prompt)
-            translation = response.content.strip()
-        
-            # Send back the translated text to Slack
-            final_text = f">From: <@{user_id}>\n>{text}\n```{translation}```"
-
-            if req.payload.get("channel_name") == "directmessage":
-                # This slash command was run in a direct message
-                print("💬 Slash command triggered in a DM")
-                # Use response_url to reply, NOT chat.postMessage
-                requests.post(
-                    response_url,
-                    json={
-                        "response_type": "in-channel",
-                        "text": f"{final_text}"
-                    }
-                )
-            else:
-                web_client.chat_postMessage(
-                    channel=channel_id,
-                    text=final_text
-                )
-
-        # Move this exception higher
-        except Exception as e:
-            print(f"❌ Error processing slash command: {e}")
-            web_client.chat_postMessage(
-                channel=channel_id,
-                text="⚠️ Sorry, something went wrong while processing your translation request."
-            )
-    if command == "/en":
-        # Translate the text (remove '/indo' and translate the rest)
-        text_to_translate = text.strip()
-        prompt = f"Translate this message to English: {text_to_translate}"
-
-        try:
-            # Run the agent to get the translation
-            response: RunResponse = agent.run(prompt)
-            translation = response.content.strip()
-
-            # Send back the translated text to Slack
-            final_text = f">From: <@{user_id}>\n>{text}\n```{translation}```"
-            web_client.chat_postMessage(
-                channel=channel_id,
-                text=final_text
-            )
-
-        # Move this exception higher
-        except Exception as e:
-            print(f"❌ Error processing slash command: {e}")
-            web_client.chat_postMessage(
-                channel=channel_id,
-                text="⚠️ Sorry, something went wrong while processing your translation request."
-            )
-
-def handle_events_api(req: SocketModeRequest):
-    # Send acknowledgment response to Slack to avoid timeout
-    client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
-
-    # Add a reaction to the message (e.g., "eyes" emoji) as an acknowledgment in the channel
-    event = req.payload.get("event", {})
-    user = event.get("user")
-    bot_id = event.get("bot_id")  # Only exists if message was sent by a bot
-
-    # Ignore messages from bots (including your own bot)
-    if bot_id or user == BOT_USER_ID:
-        print("🤖 Skipping bot message to avoid loop.")
+    prompt = translation_prompts.get(command)
+    if not prompt:
+        print("⚠️ Unrecognized slash command.")
         return
 
-    print("Payload", req.payload)
-    if event:
+    try:
+        response: RunResponse = agent.run(prompt)
+        translation = response.content.strip()
+        final_text = f">From: <@{user_id}>\n>{text}\n```{translation}```"
+
+        requests.post(
+            response_url,
+            json={
+                "response_type": "in_channel",  # or "ephemeral" for private response
+                "text": final_text
+            }
+        )
+
+    except Exception as e:
+        print(f"❌ Error in slash command handler: {e}")
+        requests.post(
+            response_url,
+            json={"text": "⚠️ Sorry, something went wrong while processing your translation request."}
+        )
+
+# === Handle Events API (mentions and DMs) ===
+def handle_events_api(req: SocketModeRequest):
+    event = req.payload.get("event", {})
+    user = event.get("user")
+    bot_id = event.get("bot_id")
+    if bot_id or user == BOT_USER_ID:
+        print("🤖 Ignoring bot message.")
+        return
+
+    event_type = event.get("type")
+    channel = event.get("channel")
+    channel_type = event.get("channel_type")
+    text = event.get("text", "").strip()
+    thread_ts = event.get("thread_ts") or event.get("ts")
+
+    # React to acknowledge
+    try:
         client.web_client.reactions_add(
             name="eyes",
-            channel=event["channel"],  # Channel where the event occurred
-            timestamp=event["ts"],  # Timestamp of the message that triggered the event
+            channel=channel,
+            timestamp=event["ts"]
         )
-    
+    except Exception as e:
+        print(f"⚠️ Failed to react to message: {e}")
 
-        # Now, access various properties inside the event dictionary
-        event_type = event.get("type")  # e.g., app_mention
-        channel_type = event.get("channel_type")
-        print("Event Type, Channel Type:", event_type, channel_type)
-
-        thread_ts = event.get("thread_ts") or event.get("ts")
-
-
-        # Extract workspace ID (team_id)
-        team_id = req.payload.get("team_id")
-        print(f"🏢 Workspace ID (team_id): {team_id}")
-
-        
-        # Clean text from the mention if it's an app mention
+    try:
         if event_type == "app_mention":
-            bot_user_id = req.payload["authorizations"][0]["user_id"]  # Get bot's user ID
-            user = event.get("user")
-            mention = f"<@{bot_user_id}>"
-            text = event.get("text", "")  # Make sure the text is safely retrieved
-            channel = event.get("channel")
-            cleaned_text = text.replace(mention, "").strip()  # Clean the mention from the text
+            bot_user_id = req.payload["authorizations"][0]["user_id"]
+            cleaned_text = text.replace(f"<@{bot_user_id}>", "").strip()
+            print(f"💬 Mention from <@{user}>: {cleaned_text}")
 
-            print(f"Bot User ID: {bot_user_id}")
-            print(f"Mention: {mention}")
-            print(f"User:", user)
-            print(f"Cleaned Text: {cleaned_text}")
-            print(f"Channel:", channel)
-
-            print("\n🧠 Running agent with prompt:")
-
-            try:
-                prompt = cleaned_text
-                # Run the agent
-                response: RunResponse = agent.run(prompt)
-                final_text = f">{text.strip()}\n<@{user}> {response.content.strip()}\n"
-                
-                # Strip bot user mention from the final message text
-                final_text = final_text.replace(f"<@{BOT_USER_ID}>", "").strip()
-                print("📤 Response:", final_text)
-
-                # Determine if this is a thread reply
-                thread_ts = event.get("thread_ts")
-
-                # Build the message payload
-                message_payload = {
-                    "channel": channel,
-                    "text": final_text
-                }
-
-                # Only include thread_ts if it exists
-                if thread_ts is not None:
-                    message_payload["thread_ts"] = thread_ts
-
-                # Send the message
-                client.web_client.chat_postMessage(**message_payload)
-                
-            except Exception as e:
-                print(f"❌ Error while processing prompt: {e}")
-                client.web_client.chat_postMessage(
-                    channel=channel,
-                    text="⚠️ Sorry, something went wrong while processing your request."
-                )
-        
-        # Handle other channel types: public/private channels or direct messages
-        elif event_type == "message" and channel_type == "im" :  # Direct message (DM) to the bot
-            print(f"Direct message from <@{event.get('user')}> in DM.")
-            print("Channel type:", channel_type)
-            text = event.get("text", "")
-            # Process the message as you would for normal text
-            cleaned_text = text.strip()
-            # Process the message (maybe run the agent or do something else)
-            print(f"Message in DM: {cleaned_text}")
-
-            # # Run agent or handle it however you need
-            prompt = cleaned_text
-            response: RunResponse = agent.run(prompt)
-            final_text = f"{response.content.strip()}"
+            response: RunResponse = agent.run(cleaned_text)
+            final_text = f">{text}\n<@{user}> {response.content.strip()}"
 
             client.web_client.chat_postMessage(
-                channel=event["channel"],
+                channel=channel,
                 text=final_text,
                 thread_ts=thread_ts
             )
 
+        elif event_type == "message" and channel_type == "im":
+            print(f"📩 DM from <@{user}>: {text}")
+            response: RunResponse = agent.run(text)
+            client.web_client.chat_postMessage(
+                channel=channel,
+                text=response.content.strip(),
+                thread_ts=thread_ts
+            )
+
         else:
-            print("ℹ️ Event type not supported, skipping.")
+            print("ℹ️ Event type not supported.")
 
+    except Exception as e:
+        print(f"❌ Error in event handler: {e}")
+        client.web_client.chat_postMessage(
+            channel=channel,
+            text="⚠️ Sorry, something went wrong while processing your request."
+        )
 
-# === Register and Connect ===
+# === Start Socket Mode connection ===
 client.socket_mode_request_listeners.append(process)
 print("🚀 Connecting to Slack via Socket Mode...")
 client.connect()
-
-# === Keep alive ===
-from threading import Event
 Event().wait()

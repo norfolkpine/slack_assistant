@@ -8,13 +8,12 @@ ENV PATH="/root/.local/bin:$PATH"
 
 RUN apt-get update && apt-get install -y curl build-essential && apt-get clean
 
-RUN curl -sSL https://install.python-poetry.org | python3 - && \
-    ln -s /root/.local/bin/poetry /usr/local/bin/poetry
+RUN pip install --upgrade pip
 
-COPY pyproject.toml poetry.lock* ./
-RUN poetry install --no-root --only main
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
 EXPOSE 8080
-CMD ["poetry", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
