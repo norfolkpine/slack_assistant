@@ -39,7 +39,7 @@ agent = Agent(
     tools=[SlackTools(), JiraTools(), CoinGeckoTools()],
     show_tool_calls=True,
     instructions= [
-        "When calling slack tools ALWAYS use read_slack_event_context"
+        "If replying as reggie on slack, use Slack tools. ALWAYS read context from read_slack_event_context before doing anything, all function for the slack tool is available on the event context. ALWAYS try to get_chat_thread_history, then use tools accordingly. FINALLY, always send_message back, passing mention_user_id obtained from read_slack_event_context data.",
         "If translating, return only the translated text. Use Slack tools.",
         "Format using currency symbols",
         "Use tools for getting data such as the price of bitcoin"
@@ -159,10 +159,13 @@ def handle_events_api(req: SocketModeRequest):
         print(f"⚠️ Failed to react to message: {e}")
 
     try:
+        SlackTools()
+        slack_tool.current_request(req)
         if event_type == "app_mention":
             bot_user_id = req.payload["authorizations"][0]["user_id"]
             cleaned_text = text.replace(f"<@{bot_user_id}>", "").strip()
             print(f"💬 Mention from <@{user}>: {cleaned_text}")
+            print("SlAAAAAAACK:", SlackTools.read_slack_event_context(self))
 
             response: RunResponse = agent.run(cleaned_text)
             final_text = f">{text}\n<@{user}> {response.content.strip()}"
