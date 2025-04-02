@@ -60,9 +60,9 @@ class SlackTools(Toolkit):
             "ts": event.get("ts")
         }
 
-    def send_message(self, user: str, channel: str, text: str, thread_ts: Optional[str] = None) -> str:
+    def send_message(self, reply_to_user: str, channel: str, text: str, thread_ts: Optional[str] = None) -> str:
         try:
-            final_text = f"<@{user}> {text}"
+            final_text = f"<@{reply_to_user}> {text}" if reply_to_user else text
             response = self.client.web_client.chat_postMessage(
                 channel=channel, 
                 text=final_text,
