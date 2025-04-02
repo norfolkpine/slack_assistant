@@ -15,6 +15,7 @@ from agno.tools.jira import JiraTools
 from tools.coingecko import CoinGeckoTools
 from tools.custom_slack import SlackTools
 from tools.blockscout import BlockscoutTools
+from typing import Optional, Dict, Any
 
 
 # === Load environment variables ===
@@ -32,18 +33,26 @@ BOT_USER_ID = auth_info["user_id"]
 TEAM_ID = auth_info["team_id"]
 
 # === Setup AI Agent ===
-agent = Agent(
-    name="Reggie",
-    model=OpenAIChat(id="gpt-4o"),
-    #model=Gemini(id="gemini-1.5-flash"),
-    tools=[SlackTools(), JiraTools(), CoinGeckoTools()],
-    show_tool_calls=True,
-    instructions= [
-        "If translating, return only the translated text. Use Slack tools.",
-        "Format using currency symbols",
-        "Use tools for getting data such as the price of bitcoin"
-        ]
-)
+def init_agent(
+    event: Optional[Dict[str, Any]] = None,
+):
+    agent = Agent(
+        name="Reggie",
+        model=OpenAIChat(id="gpt-4o"),
+        #model=Gemini(id="gemini-1.5-flash"),
+        tools=[SlackTools(), JiraTools(), CoinGeckoTools()],
+        show_tool_calls=True,
+        instructions= [
+            "If translating, return only the translated text. Use Slack tools.",
+            "If replying as reggie on slack, use Slack tools. ALWAYS try to get_chat_thread_history, then use tools accordingly. FINALLY, always send_message back",
+            "Format using currency symbols",
+            "Use tools for getting data such as the price of bitcoin"
+        ],
+        read_chat_history=True,
+        add_history_to_messages=True,
+        num_history_responses=10,
+    )
+    return agent
 
 # === Check for subscription (stubbed) ===
 def has_valid_subscription(team_id: str) -> bool:
@@ -83,18 +92,19 @@ def process(client: SocketModeClient, req: SocketModeRequest):
     if req.payload.get("response_url"):
         requests.post(req.payload["response_url"], json={"text": "⚙️ Processing... Please wait."})
 
+    agent = init_agent(req.payload.get("event", {}))
     try:
         if req.type == "slash_commands":
-            handle_slash_command(req)
+            handle_slash_command(agent, req)
         elif req.type == "events_api":
-            handle_events_api(req)
+            handle_events_api(agent, req)
         else:
             print(f"ℹ️ Unsupported request type: {req.type}")
     except Exception as e:
         print(f"❌ Error while processing request: {e}")
 
 # === Handle slash commands ===
-def handle_slash_command(req: SocketModeRequest):
+def handle_slash_command(agent: Agent, req: SocketModeRequest):
     command = req.payload.get("command")
     text = req.payload.get("text", "").strip()
     user_id = req.payload.get("user_id")
@@ -133,7 +143,7 @@ def handle_slash_command(req: SocketModeRequest):
         )
 
 # === Handle Events API (mentions and DMs) ===
-def handle_events_api(req: SocketModeRequest):
+def handle_events_api(agent: Agent, req: SocketModeRequest):
     event = req.payload.get("event", {})
     user = event.get("user")
     bot_id = event.get("bot_id")
@@ -163,14 +173,19 @@ def handle_events_api(req: SocketModeRequest):
             cleaned_text = text.replace(f"<@{bot_user_id}>", "").strip()
             print(f"💬 Mention from <@{user}>: {cleaned_text}")
 
-            response: RunResponse = agent.run(cleaned_text)
-            final_text = f">{text}\n<@{user}> {response.content.strip()}"
+            response: RunResponse = agent.run(
+                message=str({
+                "type": "slack",
+                "message": cleaned_text,
+                "channel": channel,
+                "thread_ts": thread_ts,
+            }))
 
-            client.web_client.chat_postMessage(
-                channel=channel,
-                text=final_text,
-                thread_ts=thread_ts
-            )
+            # client.web_client.chat_postMessage(
+            #     channel=channel,
+            #     text=final_text,
+            #     thread_ts=thread_ts
+            # )
 
         elif event_type == "message" and channel_type == "im":
             print(f"📩 DM from <@{user}>: {text}")
