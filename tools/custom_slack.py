@@ -46,6 +46,8 @@ class SlackTools(Toolkit):
             self.register(self.get_current_channel)
         if get_previous_user_message:
             self.register(self.get_previous_user_message)
+        
+        self.register(self.get_detailed_channel_information)
 
     def current_request(self,  req: SocketModeRequest) -> None:
         self.req = req
@@ -56,13 +58,17 @@ class SlackTools(Toolkit):
             return
         
         self.event = {
+            "mention_user_id": event.get("user"),
             "channel": event.get("channel"),
             "ts": event.get("ts")
         }
 
-    def send_message(self, reply_to_user: str, channel: str, text: str, thread_ts: Optional[str] = None) -> str:
+    def read_slack_event_context(self) -> str:
+        return json.dumps(self.event)
+
+    def send_message(self, mention_user_id: str, channel: str, text: str, thread_ts: Optional[str] = None) -> str:
         try:
-            final_text = f"<@{reply_to_user}> {text}" if reply_to_user else text
+            final_text = f"<@{mention_user_id}> {text}" if mention_user_id else text
             response = self.client.web_client.chat_postMessage(
                 channel=channel, 
                 text=final_text,
@@ -190,4 +196,12 @@ class SlackTools(Toolkit):
             return json.dumps({"error": str(e)})
         except Exception as e:
             logger.error(f"Error getting previous message: {e}")
+            return json.dumps({"error": str(e)})
+
+    def get_detailed_channel_information(self, channelID: str) -> str:
+        try:
+            response = self.client.web_client.conversations_info(channel=channelID)
+            return json.dumps(response.data)
+        except SlackApiError as e:
+            logger.error(f"Error getting channel info: {e}")
             return json.dumps({"error": str(e)})
