@@ -4,8 +4,6 @@ from typing import Any, Dict, List, Optional
 
 from agno.tools.toolkit import Toolkit
 from agno.utils.log import logger
-from slack_sdk.socket_mode.request import SocketModeRequest
-from slack_sdk.socket_mode import SocketModeClient
 
 try:
     from slack_sdk import WebClient
@@ -13,107 +11,83 @@ try:
 except ImportError:
     raise ImportError("Slack tools require the `slack_sdk` package. Run `pip install slack-sdk` to install it.")
 
-SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
-SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN")
 
 class SlackTools(Toolkit):
     def __init__(
         self,
         token: Optional[str] = None,
-        event: Optional[Dict[str, Any]] = None,
         send_message: bool = True,
         list_channels: bool = True,
+        get_channel_history: bool = True,
+        is_thread_valid: bool = True,
         get_thread_history: bool = True,
-        get_current_channel: bool = True,
-        get_previous_user_message: bool = True,
+        get_detailed_channel_information: bool = True
     ):
         super().__init__(name="slack")
         self.token: Optional[str] = token or os.getenv("SLACK_TOKEN")
-        self.event: Optional[Dict[str, Any]] = event  # 👈 save it here
-        
         if self.token is None or self.token == "":
             raise ValueError("SLACK_TOKEN is not set")
-        web_client = WebClient(token=SLACK_BOT_TOKEN)
-        self.client = SocketModeClient(app_token=SLACK_APP_TOKEN, web_client=web_client)
-
+        self.client = WebClient(token=self.token)
         if send_message:
             self.register(self.send_message)
         if list_channels:
             self.register(self.list_channels)
+        if get_channel_history:
+            self.register(self.get_channel_history)
+        if is_thread_valid:
+            self.register(self.is_thread_valid)
         if get_thread_history:
-            self.register(self.get_conversation_history)
-        if get_current_channel:
-            self.register(self.get_current_channel)
-        if get_previous_user_message:
-            self.register(self.get_previous_user_message)
-        
-        self.register(self.get_detailed_channel_information)
+            self.register(self.get_thread_history)
+        if get_detailed_channel_information:
+            self.register(self.get_detailed_channel_information)
 
-    def current_request(self,  req: SocketModeRequest) -> None:
-        self.req = req
-        self._set_event(req.payload.get("event"))
+    def send_message(self, channel: str, text: str, thread_ts: Optional[str]=None) -> str:
+        """
+        Send a message to a Slack channel.
 
-    def _set_event(self, event: Dict[str, Any]) -> None:
-        if self.event is not None:
-            return
-        
-        self.event = {
-            "mention_user_id": event.get("user"),
-            "channel": event.get("channel"),
-            "ts": event.get("ts")
-        }
+        Args:
+            channel (str): The channel ID or name to send the message to.
+            text (str): The text of the message to send.
 
-    def read_slack_event_context(self) -> str:
-        return json.dumps(self.event)
-
-    def send_message(self, mention_user_id: str, channel: str, text: str, thread_ts: Optional[str] = None) -> str:
+        Returns:
+            str: A JSON string containing the response from the Slack API.
+        """
         try:
-            final_text = f"<@{mention_user_id}> {text}" if mention_user_id else text
-            response = self.client.web_client.chat_postMessage(
-                channel=channel, 
-                text=final_text,
-                thread_ts=thread_ts,
-            )
+            response = self.client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
             return json.dumps(response.data)
         except SlackApiError as e:
             logger.error(f"Error sending message: {e}")
             return json.dumps({"error": str(e)})
 
     def list_channels(self) -> str:
+        """
+        List all channels in the Slack workspace.
+
+        Returns:
+            str: A JSON string containing the list of channels.
+        """
         try:
-            response = self.client.web_client.conversations_list()
+            response = self.client.conversations_list()
             channels = [{"id": channel["id"], "name": channel["name"]} for channel in response["channels"]]
             return json.dumps(channels)
         except SlackApiError as e:
             logger.error(f"Error listing channels: {e}")
             return json.dumps({"error": str(e)})
 
-    def get_conversation_history(self, channel: str, thread_ts: Optional[str] = None, limit: int = 100) -> str:
-        try:
-            if thread_ts:
-                # Get thread replies if thread_ts is provided
-                response = self.client.web_client.conversations_replies(
-                    channel=channel,
-                    ts=thread_ts,
-                    limit=limit
-                )
-                messages: List[Dict[str, Any]] = [
-                    {
-                        "text": msg.get("text", ""),
-                        "user": "webhook" if msg.get("subtype") == "bot_message" else msg.get("user", "unknown"),
-                        "ts": msg.get("ts", ""),
-                        "sub_type": msg.get("subtype", "unknown"),
-                        "attachments": msg.get("attachments", []) if msg.get("subtype") == "bot_message" else "n/a",
-                    }
-                    for msg in response.get("messages", [])
-                ]
+    def get_channel_history(self, channel: str, limit: int = 100) -> str:
+        """
+        Get the message history of a Slack channel.
 
-                if len(messages) > 1:
-                    return json.dumps(messages)
-                
-            # Get normal conversation history
-            response = self.client.web_client.conversations_history(channel=channel, limit=limit)
-            messages: List[Dict[str, Any]] = [
+        Args:
+            channel (str): The channel ID to fetch history from.
+            limit (int): The maximum number of messages to fetch. Defaults to 100.
+
+        Returns:
+            str: A JSON string containing the channel's message history.
+        """
+        try:
+            response = self.client.conversations_history(channel=channel, limit=limit)
+            messages: List[Dict[str, Any]] = [  # type: ignore
                 {
                     "text": msg.get("text", ""),
                     "user": "webhook" if msg.get("subtype") == "bot_message" else msg.get("user", "unknown"),
@@ -128,82 +102,60 @@ class SlackTools(Toolkit):
             logger.error(f"Error getting channel history: {e}")
             return json.dumps({"error": str(e)})
 
-    def get_current_channel(self) -> str:
+    def is_thread_valid(self, channel: str, thread_ts: str) -> str:
         """
-        Fallback method to guess the current channel (e.g., most recently active public one).
-
-        Returns:
-            str: JSON with the guessed current channel name and ID.
-        """
-        try:
-            response = self.client.web_client.conversations_list(types="public_channel,private_channel", exclude_archived=True)
-            channels = response.get("channels", [])
-            if not channels:
-                return json.dumps({"error": "No channels found"})
-
-            # Example: return first channel (or enhance logic)
-            most_recent = channels[0]
-            return json.dumps({
-                "id": most_recent["id"],
-                "name": most_recent["name"]
-            })
-
-        except SlackApiError as e:
-            logger.error(f"Error listing channels: {e}")
-            return json.dumps({"error": str(e)})
-
-
-    def get_previous_user_message(self, event: Optional[Dict[str, Any]] = None, limit: int = 20) -> str:
-        """
-        Get the previous user message from the same channel.
+        Check if a thread is valid in a channel.
 
         Args:
-            event (Dict[str, Any], optional): Slack event with 'channel' key. If None, uses self.event.
-            limit (int): How many messages to look back.
+            channel (str): The channel ID to check the thread in.
+            thread_ts (str): The timestamp of the thread.
 
         Returns:
-            str: The most recent human message before the current one.
+            str: A JSON string indicating whether the thread is valid.
         """
         try:
-            # Use the stored event if none provided
-            if event is None:
-                event = self.event
-                
-            if not event:
-                return json.dumps({"error": "No event data available."})
-            
-            channel = event.get("channel")
-            current_ts = event.get("ts")
-
-            if not channel:
-                return json.dumps({"error": "Channel ID not found in event."})
-            
-            response = self.client.conversations_history(channel=channel, limit=limit)
-            messages = response.get("messages", [])
-
-            for msg in messages:
-                if msg.get("ts") == current_ts:
-                    continue  # skip the current message
-                if msg.get("subtype") == "bot_message":
-                    continue  # skip bots
-                if "user" in msg and msg.get("text"):
-                    return json.dumps({
-                        "text": msg["text"],
-                        "user": msg["user"],
-                        "ts": msg["ts"]
-                    })
-
-            return json.dumps({"error": "No previous user message found."})
+            response = self.client.conversations_replies(channel=channel, ts=thread_ts)
+            is_valid = len(response["messages"]) > 1
+            return json.dumps({"is_valid": is_valid})
         except SlackApiError as e:
-            logger.error(f"Slack API error: {e}")
-            return json.dumps({"error": str(e)})
-        except Exception as e:
-            logger.error(f"Error getting previous message: {e}")
-            return json.dumps({"error": str(e)})
+            logger.error(f"Error checking thread validity: {e}")
+            return json.dumps({"error": str(e), "is_valid": False})
+    
+    def get_thread_history(self, channel: str, thread_ts: str, limit: int = 100) -> str:
+        """
+        Get the message history of a thread in a Slack channel.
 
+        Args:
+            channel (str): The channel ID to fetch thread history from.
+            thread_ts (str): The timestamp of the thread.
+
+        Returns:
+            str: A JSON string containing the thread's message history.
+        """
+        try:
+            response = self.client.conversations_replies(
+                channel=channel,
+                ts=thread_ts,
+                limit=limit
+            )
+            messages: List[Dict[str, Any]] = [
+                {
+                    "text": msg.get("text", ""),
+                    "user": "webhook" if msg.get("subtype") == "bot_message" else msg.get("user", "unknown"),
+                    "ts": msg.get("ts", ""),
+                    "sub_type": msg.get("subtype", "unknown"),
+                    "attachments": msg.get("attachments", []) if msg.get("subtype") == "bot_message" else "n/a",
+                }
+                for msg in response.get("messages", [])
+            ]
+            return json.dumps(messages)
+        except SlackApiError as e:
+            logger.error(f"Error getting thread history: {e}")
+            return json.dumps({"error": str(e)})
+    
     def get_detailed_channel_information(self, channelID: str) -> str:
         try:
-            response = self.client.web_client.conversations_info(channel=channelID)
+            response = self.client.conversations_info(channel=channelID)
             return json.dumps(response.data)
         except SlackApiError as e:
             logger.error(f"Error getting channel info: {e}")
