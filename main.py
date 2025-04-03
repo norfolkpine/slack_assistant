@@ -195,6 +195,7 @@ def handle_events_api(agent: Agent, req: SocketModeRequest):
                 "type": "slack",
                 "from_user": user,
                 "message": cleaned_text,
+                "mrkdwn": True,
                 "channel": channel,
                 "thread_ts": thread_ts,
             }))
@@ -211,6 +212,7 @@ def handle_events_api(agent: Agent, req: SocketModeRequest):
             client.web_client.chat_postMessage(
                 channel=channel,
                 text=response.content.strip(),
+                mrkdwn=True,
                 thread_ts=thread_ts
             )
 
