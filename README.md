@@ -230,3 +230,4 @@ MIT or your custom license.
 
 # Docker
 docker build -t gcr.io/bh-crypto/my-slack-bot:latest .
+docker push gcr.io/bh-crypto/my-slack-bot:latest
