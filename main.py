@@ -120,7 +120,10 @@ def handle_slash_command(agent: Agent, req: SocketModeRequest):
 
     translation_prompts = {
         "/indo": f"Translate this message to informal Indonesian: {text}",
-        "/en": f"Translate this message to English: {text}"
+        "/en": f"Translate this message to English: {text}",
+        "/de": f"Translate this message to German: {text}",
+        "/es": f"Translate this message to Spanish: {text}",
+        "/cn": f"Translate this message to Mandarin: {text}"
     }
 
     prompt = translation_prompts.get(command)
@@ -136,8 +139,16 @@ def handle_slash_command(agent: Agent, req: SocketModeRequest):
         requests.post(
             response_url,
             json={
-                "response_type": "in_channel",  # or "ephemeral" for private response
-                "text": final_text
+                "response_type": "in_channel", # or "ephemeral" for private response
+                "blocks": [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": final_text
+                        }
+                    }
+                ]
             }
         )
 
