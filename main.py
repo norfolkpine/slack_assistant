@@ -52,7 +52,14 @@ def init_agent(
                 FINALLY, always send_message back.
             """,
             "Format using currency symbols",
-            "Use tools for getting data such as the price of bitcoin"
+            "Use tools for getting data such as the price of bitcoin",
+            """
+                To ensure clear and consistent communication using Slack's markdown formatting, please adhere to the following guidelines:
+                1. **Bold Text:** Use a single asterisk (*) at the beginning and end of a word or phrase to make the text bold. Avoid using double asterisks (**) for bold formatting. Example: *bold text*
+                2. **Consistency:** Ensure that this single asterisk method for bold text is applied uniformly throughout all your responses in Slack.
+                3. **Slack Compatibility:** Always follow Slack's formatting requirements to maintain clarity and professionalism in all communications.
+                By following these instructions, you'll ensure that your communication is easily readable and conforms to Slack's markdown standards.
+            """,
         ],
         read_chat_history=True,
         add_history_to_messages=True,
