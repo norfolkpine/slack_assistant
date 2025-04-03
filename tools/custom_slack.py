@@ -44,7 +44,7 @@ class SlackTools(Toolkit):
 
     def send_message(self, channel: str, text: str) -> str:
         try:
-            response = self.client.chat_postMessage(channel=channel, text=text)
+            response = self.client.chat_postMessage(channel=channel, text=text, mrkdwn=True)
             return json.dumps(response.data)
         except SlackApiError as e:
             logger.error(f"Error sending message: {e}")
